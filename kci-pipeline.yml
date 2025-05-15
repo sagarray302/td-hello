@@ -1,0 +1,73 @@
+Build phase:
+  stages:
+    Linter:
+      type: generic
+      steps:
+        - docker-compose run lint
+
+    Tests - Java21:
+      when not:
+        - staging
+      type: tests
+      steps:
+        - docker-compose run tests-java21
+
+    SonarQube:
+      type: sonarqube
+      when not:
+        - staging
+        - ^PR-\d*$
+      steps:
+        - docker-compose run sonarqube
+      QG Wait: false
+      Fail Pipeline: false
+
+    Build Docker Image:
+      when:
+        - main
+        - staging
+        - qa
+      type: docker_build
+      app_images:
+        - dockerfile: Dockerfile-java21
+          app_name: td-hello
+
+    Push Docker Image:
+      type: docker_push
+      when:
+        - main
+        - staging
+        - qa
+
+Deploy phase:
+  stg:
+    deploy mode: automatic
+    when:
+      - staging
+    stages:
+      Deploy to STG:
+        type: deploy_kubernetes
+        regions:
+          td-us-1:
+            - us-east-1
+        app_name:
+          - td-hello
+
+Notifications:
+  - channels:
+      - td-hello
+    when:
+      - ^v[0-9]+\.[0-9]+\.[0-9]+(-hotfix\-[0-9]{2})?$
+    status:
+      - ABORTED
+      - BACK_TO_NORMAL
+      - FAILURE
+      - SUCCESS
+  - channels:
+      - td-hello
+    when:
+      - main
+    status:
+      - ABORTED
+      - BACK_TO_NORMAL
+      - FAILURE

@@ -1,0 +1,27 @@
+FROM gradle:jdk21 as build_image
+LABEL maintainer='octo'
+
+ENV APP_HOME /app
+WORKDIR $APP_HOME
+
+# Copy dependencies
+
+COPY build.gradle.kts $APP_HOME
+COPY settings.gradle.kts $APP_HOME
+COPY src $APP_HOME/src
+ADD entrypoint.sh .
+
+# Build
+RUN gradle clean build -x test -x ktlintCheck
+
+# Final Docker Image
+FROM hub.talkdeskapp.com/talkdesk/base/temurinjdk:21-240515-jre
+LABEL maintainer='octo'
+
+WORKDIR /app
+
+COPY --from=build_image /app/entrypoint.sh /app/
+COPY --from=build_image /app/build/libs/*.jar /app/
+
+COPY gradlew /app
+#ENTRYPOINT ["java", "-jar", "/app/td-hello.jar"]

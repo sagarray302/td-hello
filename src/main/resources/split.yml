@@ -1,0 +1,4 @@
+- dummy-flag-a:
+    treatment: "on"
+- dummy-flag-b:
+    treatment: "off"

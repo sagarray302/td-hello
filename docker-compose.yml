@@ -1,0 +1,99 @@
+version: "3.9"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile-java21
+    environment:
+      TALKDESK_REGION: "td-us-1"
+      AWS_REGION: "td-us-1"
+      NEW_RELIC_LICENSE_KEY: "replace-with-a-valid-key"
+      NEW_RELIC_AGENT_ENABLED: "false"
+    command: >
+      sh /app/entrypoint.sh
+    ports:
+      - "3000:8080"
+      - "3001:8081"
+
+  contract-validation:
+    build:
+      context: https://${BUNDLE_GITHUB__COM}@github.com/Talkdesk/api-docs.git
+      dockerfile: Dockerfile
+      target: build_image
+    volumes:
+      - ./my-caddyfile:/app/Caddyfile
+      - ./my-mock-spec.yaml:/app/mock-spec.yaml
+      - ./my-proxy-spec.yaml:/app/proxy-spec.yaml
+    command: bash -c "/app/start.sh https://api.talkdeskstg.com"
+    ports:
+      - '8080:80'
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus-grafana/prometheus/prometheus-development.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+
+  lint:
+    build:
+      context: .
+      dockerfile: Dockerfile-java21
+      target: build_image
+    command: gradle ktlintCheck
+
+  tests-java21:
+    build:
+      context: .
+      dockerfile: Dockerfile-java21
+      target: build_image
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: gradle test
+
+  sonarqube:
+    build:
+      context: .
+      dockerfile: Dockerfile-java21
+      target: build_image
+    volumes:
+      - .:/app
+    working_dir: /app
+    environment:
+      - GRADLE_OPTS=-Dorg.gradle.daemon=false
+      - SONAR_HOST_URL=${SONAR_HOST_URL}
+      - SONAR_AUTH_TOKEN=${SONAR_AUTH_TOKEN}
+      - APP_NAME=${APP_NAME}
+      - GIT_BRANCH=${GIT_BRANCH}
+      - RELEASE_TAG=${RELEASE_TAG}
+    command: >
+      bash -c " gradle sonar"
+
+  grafana:
+    image: grafana/grafana:latest
+    volumes:
+      - ./prometheus-grafana/grafana/grafana.ini:/etc/grafana/grafana.ini
+      - ./prometheus-grafana/grafana/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yaml
+      - ./prometheus-grafana/grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yaml
+      - ./prometheus-grafana/grafana/project_dashboard.json:/etc/grafana/dashboards/project_dashboard.json
+    ports:
+      - 4005:3000
+    links:
+      - prometheus
+
+  jaeger: &JAEGER_BASE
+    image: jaegertracing/all-in-one:1.22
+
+  jaeger-all-in-one-local:
+    <<: *JAEGER_BASE
+    environment:
+      - COLLECTOR_ZIPKIN_HTTP_PORT=9411
+    ports:
+      - "5775:5775/udp"
+      - "6831:6831/udp"
+      - "6832:6832/udp"
+      - "5778:5778"
+      - "16686:16686" # << THIS IS THE UI
+      - "14268:14268"
